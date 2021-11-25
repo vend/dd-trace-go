@@ -86,6 +86,14 @@ func (t *mocktracer) StartSpan(operationName string, opts ...ddtrace.StartSpanOp
 	return span
 }
 
+func (t *mocktracer) SetDataPipelineCheckpoint(receivingPipelineName string, opts ...ddtrace.DataPipelineOption) ddtrace.DataPipeline {
+	return nil
+}
+
+func (t *mocktracer) DataPipelineFromBaggage([]byte) (ddtrace.DataPipeline, error) {
+	return nil, nil
+}
+
 func (t *mocktracer) OpenSpans() []Span {
 	t.RLock()
 	defer t.RUnlock()

@@ -37,6 +37,8 @@ type tracer struct {
 	// stats are enabled.
 	stats *concentrator
 
+	pipelineStats *pipelineConcentrator
+
 	// traceWriter is responsible for sending finished traces to their
 	// destination, such as the Trace Agent or Datadog Forwarder.
 	traceWriter traceWriter
@@ -132,6 +134,16 @@ func StartSpan(operationName string, opts ...StartSpanOption) Span {
 	return internal.GetGlobalTracer().StartSpan(operationName, opts...)
 }
 
+// SetDataPipelineCheckpoint sets a data pipeline checkpoint.
+func SetDataPipelineCheckpoint(receivingPipelineName string, opts ...DataPipelineOption) ddtrace.DataPipeline {
+	return internal.GetGlobalTracer().SetDataPipelineCheckpoint(receivingPipelineName, opts...)
+}
+
+// DataPipelineFromBaggage creates a data pipeline from data.
+func DataPipelineFromBaggage(data []byte) (ddtrace.DataPipeline, error) {
+	return internal.GetGlobalTracer().DataPipelineFromBaggage(data)
+}
+
 // Extract extracts a SpanContext from the carrier. The carrier is expected
 // to implement TextMapReader, otherwise an error is returned.
 // If the tracer is not started, calling this function is a no-op.
@@ -175,6 +187,7 @@ func newUnstartedTracer(opts ...StartOption) *tracer {
 		prioritySampling: sampler,
 		pid:              strconv.Itoa(os.Getpid()),
 		stats:            newConcentrator(c, defaultStatsBucketSize),
+		pipelineStats:    newPipelineConcentrator(c, time.Second*10),
 	}
 	return t
 }
@@ -220,6 +233,7 @@ func newTracer(opts ...StartOption) *tracer {
 		},
 		Tags: c.globalTags,
 	})
+	t.pipelineStats.Start()
 	return t
 }
 
@@ -261,6 +275,7 @@ func (t *tracer) worker(tick <-chan time.Time) {
 		case done := <-t.flush:
 			t.config.statsd.Incr("datadog.tracer.flush_triggered", []string{"reason:invoked"}, 1)
 			t.traceWriter.flush()
+			t.pipelineStats.sendToAgent(t.pipelineStats.flushAll())
 			// TODO(x): In reality, the traceWriter.flush() call is not synchronous
 			// when using the agent traceWriter. However, this functionnality is used
 			// in Lambda so for that purpose this mechanism should suffice.
@@ -294,6 +309,26 @@ func (t *tracer) pushTrace(trace []*span) {
 	default:
 		log.Error("payload queue full, dropping %d traces", len(trace))
 	}
+}
+
+// DataPipeline is an alias for ddtrace.DataPipeline. It is here to allow godoc to group methods returning
+// ddtrace.DataPipeline. It is recommended and is considered more correct to refer to this type as
+// ddtrace.DataPipeline instead.
+type DataPipeline = ddtrace.DataPipeline
+
+func (t *tracer) SetDataPipelineCheckpoint(receivingPipelineName string, options ...ddtrace.DataPipelineOption) ddtrace.DataPipeline {
+	var cfg ddtrace.DataPipelineConfig
+	for _, fn := range options {
+		fn(&cfg)
+	}
+	if cfg.Parent == nil {
+		return newDataPipeline(t.config.serviceName)
+	}
+	return cfg.Parent.SetCheckpoint(receivingPipelineName)
+}
+
+func (t *tracer) DataPipelineFromBaggage(data []byte) (DataPipeline, error) {
+	return dataPipelineFromBaggage(data, t.config.serviceName)
 }
 
 // StartSpan creates, starts, and returns a new Span with the given `operationName`.
@@ -396,6 +431,7 @@ func (t *tracer) Stop() {
 		t.config.statsd.Incr("datadog.tracer.stopped", nil, 1)
 	})
 	t.stats.Stop()
+	t.pipelineStats.Stop()
 	t.wg.Wait()
 	t.traceWriter.stop()
 	t.config.statsd.Close()

@@ -7,6 +7,7 @@ package internal // import "gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 
 import (
 	"sync"
+	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 )
@@ -51,6 +52,15 @@ func (NoopTracer) StartSpan(operationName string, opts ...ddtrace.StartSpanOptio
 	return NoopSpan{}
 }
 
+// SetDataPipelineCheckpoint implements ddtrace.SetDataPipelineCheckpoint.
+func (NoopTracer) SetDataPipelineCheckpoint(receivingPipelineName string, opts ...ddtrace.DataPipelineOption) ddtrace.DataPipeline {
+	return NoopDataPipeline{}
+}
+
+func (NoopTracer) DataPipelineFromBaggage([]byte) (ddtrace.DataPipeline, error) {
+	return NoopDataPipeline{}, nil
+}
+
 // SetServiceInfo implements ddtrace.Tracer.
 func (NoopTracer) SetServiceInfo(name, app, appType string) {}
 
@@ -66,6 +76,29 @@ func (NoopTracer) Inject(context ddtrace.SpanContext, carrier interface{}) error
 func (NoopTracer) Stop() {}
 
 var _ ddtrace.Span = (*NoopSpan)(nil)
+
+// NoopDataPipeline is an implementation of ddtrace.DataPipeline that is a no-op.
+type NoopDataPipeline struct{}
+
+func (NoopDataPipeline) SetCheckpoint(receivingPipelineName string) ddtrace.DataPipeline{
+	return NoopDataPipeline{}
+}
+
+func (NoopDataPipeline) ToBaggage() ([]byte, error) {
+	return nil, nil
+}
+
+func (NoopDataPipeline) GetHash() uint64 {
+	return 0
+}
+
+func (NoopDataPipeline) GetCallTime() time.Time {
+	return time.Time{}
+}
+
+func (NoopDataPipeline) MergeWith(receivingPipelineName string, dataPipelines ...ddtrace.DataPipeline) (ddtrace.DataPipeline, error) {
+	return NoopDataPipeline{}, nil
+}
 
 // NoopSpan is an implementation of ddtrace.Span that is a no-op.
 type NoopSpan struct{}
