@@ -1,0 +1,40 @@
+name: CodeQL
+"on":
+  push:
+    branches:
+    - v1
+  pull_request:
+    branches:
+    - v1
+  schedule:
+  - cron: 37 20 * * 4
+jobs:
+  analyze:
+    name: Analyze
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+    strategy:
+      fail-fast: false
+      matrix:
+        language:
+        - go
+    steps:
+    - name: Configure git for private modules
+      env:
+        GOPRIVATE_TOKEN: ${{secrets.TOKEN_VEND_TRAVIS}}
+      run: |-
+        go env -w GOPRIVATE=github.com/vend/*
+        git config --global url."https://${GOPRIVATE_TOKEN}@github.com/vend".insteadOf "https://github.com/vend"
+    - name: Checkout repository
+      uses: actions/checkout@v2
+    - name: Initialize CodeQL
+      uses: github/codeql-action/init@v1
+      with:
+        languages: ${{ matrix.language }}
+    - name: Autobuild
+      uses: github/codeql-action/autobuild@v1
+    - name: Perform CodeQL Analysis
+      uses: github/codeql-action/analyze@v1
